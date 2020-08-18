@@ -1,7 +1,8 @@
 const express = require("express"),
-socket = require("socket.io"),
-axios = require("axios"),
-Hashids = require("hashids/cjs");
+  socket = require("socket.io"),
+  axios = require("axios"),
+  Hashids = require("hashids/cjs");
+const { response } = require("express");
 
 const PORT = process.env.PORT || 4000;
 
@@ -16,6 +17,23 @@ let triviaQuestions,
 const selectInterval = 6000,
   displayInterval = 3500,
   countdownLength = 3;
+
+app.use(function (req, res, next) {
+  res.header("Access-Control-Allow-Origin", "http://localhost:3000"); // update to match the domain you will make the request from
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept"
+  );
+  next();
+});
+
+app.get("/categories", (_, res) => {
+  axios.get("https://opentdb.com/api_category.php").then((response) => {
+    res.send(
+      response.data.trivia_categories.sort((a, b) => (a.name > b.name ? 1 : -1))
+    );
+  });
+});
 
 io.on("connection", function (socket) {
   console.log(`made connection, ID: ${socket.id}`);
@@ -116,25 +134,34 @@ var joinGame = (gameID, socket, callback) => {
   }
 };
 
-var startGame = (gameData) => {
-  const gameNum = decode(gameData.gameID);
+var startGame = ({ gameID, category, difficulty, numberQuestions }) => {
+  const gameNum = decode(gameID);
+  const d = difficulty === "-1" ? "" : `&difficulty=${difficulty}`;
+  const c = category === "-1" ? "" : `&category=${category}`;
   io.in(gameNum).emit("start countdown", countdownLength);
-  // console.log('starting game: ' + gameID)
   i = 0;
-  axios.get("https://opentdb.com/api.php?amount=5").then((response) => {
-    triviaQuestions = response.data.results;
-    setTimeout(() => sendQuestion(gameNum), countdownLength * 1000);
-  });
+  axios
+    .get(`https://opentdb.com/api.php?amount=${numberQuestions}${c}${d}`)
+    .then((response) => {
+      console.log(
+        `sent response: https://opentdb.com/api.php?amount=${numberQuestions}${c}${d}`
+      );
+      triviaQuestions = response.data.results;
+      // console.log(`got response: ${triviaQuestions}`);
+      setTimeout(() => sendQuestion(gameNum), countdownLength * 1000);
+    });
   activeGames[gameNum].canJoin = false;
 };
 
-var sendQuestion = (gameNum) => {
-  //   console.log("beginning sendquestion, i is " + i);
-  var currentQuestion = triviaQuestions[i];
+let sendQuestion = (gameNum) => {
+    console.log("beginning sendquestion, i is " + i);
+  let currentQuestion = triviaQuestions[i];
   const answers = [currentQuestion.correct_answer].concat(
     Object.values(currentQuestion.incorrect_answers)
   );
+  console.log('here1')
   const correctAnswerIndex = shuffle2(answers);
+  console.log('here2')
   console.log("the shuffled array is now" + answers);
   console.log("correctAnswerIndex is " + correctAnswerIndex);
   currentQuestion = {
@@ -148,7 +175,7 @@ var sendQuestion = (gameNum) => {
   io.in(gameNum).emit("question", currentQuestion);
   const ans = triviaQuestions[i].correct_answer;
   setTimeout(() => requestAnswer(gameNum, ans), selectInterval);
-  i = i + 1;
+  i++;
   if (i < triviaQuestions.length) {
     // console.log("setting timeout for sendquestion, i is " + i);
     setTimeout(() => sendQuestion(gameNum), selectInterval + displayInterval);
@@ -163,7 +190,7 @@ var sendQuestion = (gameNum) => {
 function shuffle2(array) {
   var correctAnsIdx = 0;
   for (let idx = array.length - 1; idx > 0; idx--) {
-    let j = Math.floor(Math.random() * (idx + 1));
+    let j = Math.floor(Math.random() * (idx+1));
     if (j === 0) {
       correctAnsIdx = JSON.parse(JSON.stringify(idx));
     }
