@@ -5,9 +5,9 @@ const express = require("express"),
 const { response } = require("express");
 
 const PORT = process.env.PORT || 4000;
+const DOMAIN = "http://localhost:3000";
 
-let triviaQuestions,
-  app = express(),
+let app = express(),
   server = app.listen(PORT, () => console.log(`listening on port ${PORT}`)),
   io = socket(server, { origins: "*:*" }),
   i = 0,
@@ -19,7 +19,7 @@ const selectInterval = 6000,
   countdownLength = 3;
 
 app.use(function (req, res, next) {
-  res.header("Access-Control-Allow-Origin", "http://localhost:3000"); // update to match the domain you will make the request from
+  res.header("Access-Control-Allow-Origin", DOMAIN); // update to match the domain you will make the request from
   res.header(
     "Access-Control-Allow-Headers",
     "Origin, X-Requested-With, Content-Type, Accept"
@@ -146,7 +146,7 @@ var startGame = ({ gameID, category, difficulty, numberQuestions }) => {
       console.log(
         `sent response: https://opentdb.com/api.php?amount=${numberQuestions}${c}${d}`
       );
-      triviaQuestions = response.data.results;
+      activeGames[gameNum].triviaQuestions = response.data.results;
       // console.log(`got response: ${triviaQuestions}`);
       setTimeout(() => sendQuestion(gameNum), countdownLength * 1000);
     });
@@ -155,7 +155,7 @@ var startGame = ({ gameID, category, difficulty, numberQuestions }) => {
 
 let sendQuestion = (gameNum) => {
     console.log("beginning sendquestion, i is " + i);
-  let currentQuestion = triviaQuestions[i];
+  let currentQuestion =  activeGames[gameNum].triviaQuestions[i];
   const answers = [currentQuestion.correct_answer].concat(
     Object.values(currentQuestion.incorrect_answers)
   );
@@ -173,10 +173,10 @@ let sendQuestion = (gameNum) => {
     correctAnswer: correctAnswerIndex.toString(),
   };
   io.in(gameNum).emit("question", currentQuestion);
-  const ans = triviaQuestions[i].correct_answer;
+  const ans =  activeGames[gameNum].triviaQuestions[i].correct_answer;
   setTimeout(() => requestAnswer(gameNum, ans), selectInterval);
   i++;
-  if (i < triviaQuestions.length) {
+  if (i <  activeGames[gameNum].triviaQuestions.length) {
     // console.log("setting timeout for sendquestion, i is " + i);
     setTimeout(() => sendQuestion(gameNum), selectInterval + displayInterval);
   } else {
