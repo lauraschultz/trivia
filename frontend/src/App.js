@@ -1,7 +1,6 @@
 import React, { Component } from "react";
 import io from "socket.io-client";
 import axios from "axios";
-import "./index.css";
 import "./tailwind.css";
 
 export class App extends Component {
@@ -11,33 +10,51 @@ export class App extends Component {
     this.socket = io.connect(this.SERVER);
     this.state = {
       userAnswer: "-1",
-      isCorrectAnswer: 0,
-      // ⬆️ https://stackoverflow.com/a/4666482/4493137
-      gameID: "",
       playerName: "",
+      gameID: "",
+      nameSubmitted: false,
       appState: "init",
       isGameCreator: false,
       numTypers: 0,
       numberQuestions: 10,
       difficulty: "-1",
-      category: "-1",
+      selectedCategory: "-1",
+      updatedIndex: 0,
+      gameOver: false,
+      initError: {
+        error: false,
+        msg: "",
+      },
+      joinError: {
+        error: false,
+        msg: "",
+      },
     };
   }
 
   componentDidMount() {
-    this.socket.on("start countdown", (countdownLength) => {
-      this.countdownTimer(countdownLength);
+    this.socket.on(
+      "start countdown",
+      ({ countdownLength, questionLength, numberQuestions }) => {
+        console.log("START COUNTDOWN");
+        this.countdownTimer(countdownLength, "gameCountdown");
+        this.setState({
+          appState: "countdown",
+          questionLength: questionLength,
+          countdownLength: countdownLength,
+          numberQuestions: numberQuestions,
+        });
+      }
+    );
+    this.socket.on("question", (q) => {
+      console.log("got a question: " + JSON.stringify(q));
       this.setState({
         appState: "play",
-      });
-    });
-    this.socket.on("question", (q) => {
-      console.log("got a question: " + q);
-      this.setState({
         currentQuestion: q,
         correctAnswer: undefined,
         userAnswer: "-1",
       });
+      this.countdownTimer(this.state.questionLength, "questionCountdown");
     });
     this.socket.on("request answer", () => {
       // validate on client or server side????????
@@ -50,29 +67,40 @@ export class App extends Component {
           gameID: this.state.gameID,
         },
         ({ isCorrect, correctAnswer }) => {
-          this.setState({ correctAnswer: correctAnswer });
+          console.log("validate aswer callback :): " + correctAnswer);
+          this.setState((prevState) => {
+            return {
+              correctAnswer: correctAnswer,
+              updatedIndex: prevState.updatedIndex + 1,
+            };
+          });
         }
       );
     });
     this.socket.on("number typers", (n) => this.setState({ numTypers: n }));
-    this.socket.on("players", (p) => this.setState({ players: p }));
+    this.socket.on("players", (p) => {
+      console.log("players: " + p);
+      this.setState({ players: p });
+    });
     this.socket.on("joining", (n) => {
       console.log("num joiners is " + n);
       this.setState({ numJoiners: n });
     });
-    // this.socket.on("game over", () =>
-    //   this.setState({
-    //     currentQuestion: undefined,
-    //     correctAnswer: undefined,
-    //     userAnswer: "-1",
-    //   })
-    // );
+    this.socket.on("game over", () => {
+      console.log("GAME OVER");
+      this.setState({
+        currentQuestion: undefined,
+        // correctAnswer: undefined,
+        userAnswer: "-1",
+        gameOver: true,
+      });
+    });
   }
 
-  countdownTimer = (n) => {
-    this.setState({ countdownTime: n });
+  countdownTimer = (n, timerName) => {
+    this.setState({ [timerName]: n });
     if (n > 0) {
-      setTimeout(() => this.countdownTimer(n - 1), 1000);
+      setTimeout(() => this.countdownTimer(n - 1, timerName), 1000);
     }
   };
 
@@ -87,6 +115,9 @@ export class App extends Component {
         this.setState({ appState: "join" });
         // this.handleTyping(true);
       } else {
+        this.setState({
+          joinError: { error: true, msg: callbackData.errorMsg },
+        });
         console.log(callbackData.errorMsg);
       }
     });
@@ -105,20 +136,26 @@ export class App extends Component {
   };
 
   startGame = () => {
-    this.socket.emit("start game", {
-      gameID: this.state.gameID,
-      category: this.state.selectedCategory,
-      difficulty: this.state.difficulty,
-      numberQuestions: this.state.numberQuestions,
-    });
-    this.setState({ appState: "play" });
+    if (!this.state.joinError.error) {
+      this.socket.emit("start game", {
+        gameID: this.state.gameID,
+        category: this.state.selectedCategory,
+        difficulty: this.state.difficulty,
+        numberQuestions: this.state.numberQuestions,
+      });
+      this.setState({ appState: "countdown" });
+    }
   };
 
   handleChange = (event) => {
     this.setState({
       [event.target.name]: event.target.value,
     });
-    console.log("changed " + event.target.name + " to " + event.target.value);
+    if (event.target.name === "gameID") {
+      this.setState({
+        joinError: { error: false, msg: "" },
+      });
+    }
   };
 
   // handleTyping = (isTyping) => {
@@ -129,42 +166,65 @@ export class App extends Component {
   // };
 
   handleSubmitName = () => {
-    // this.handleTyping(false);
+    if (!this.state.nameSubmitted && !this.state.isGameCreator) {
+      // the player is submitting name for the first time
+      this.socket.emit("joining", { numInc: -1, gameID: this.state.gameID });
+    }
     this.socket.emit("submit name", {
       gameID: this.state.gameID,
       playerName: this.state.playerName,
     });
-    this.socket.emit("joining", { numInc: -1, gameID: this.state.gameID });
+    this.setState({ nameSubmitted: true });
   };
 
   render() {
+    const currentQ = this.state.currentQuestion;
     if (this.state.appState === "init") {
       return (
-        <div className="prism-bg object-cover h-screen w-screen absolute">
-          <div className="max-w-sm mx-auto my-8 bg-gray-100 p-8 shadow-lg rounded-md">
+        <div className="prism-bg object-cover h-screen w-screen absolute flex items-center">
+          <div className="max-w-sm bg-gray-100 mx-auto p-8 shadow-lg rounded-md">
             <h1 className="font-hairline mb-2 text-4xl">Trivia</h1>
             <div className="w-full mb-4">
-            <label for="gameID" className="block font-bold mx-2">
-              Join a Game:
-            </label>
-            <input
-              className="p-2 shadow rounded-l-md text-sm w-auto overflow-hidden"
-              id="gameID"
-              name="gameID"
-              placeholder="game code"
-              value={this.state.gameID}
-              onChange={this.handleChange}
-            />
-            <button
-              className="bg-purple-800 hover:bg-purple-700 text-white uppercase shadow py-2 px-4 tracking-wider text-sm rounded-r-md"
-              onClick={this.joinGame}
-            >
-              join
-            </button>
+              <label htmlFor="gameID" className="block font-bold mx-2">
+                Join a Game:
+              </label>
+              <input
+                className={
+                  "p-2 shadow rounded-l text-sm " +
+                  (this.state.initError.error ? " border-2 border-red-800" : "")
+                }
+                id="gameID"
+                name="gameID"
+                placeholder="game code"
+                value={this.state.gameID}
+                onChange={this.handleChange}
+              />
+              <button
+                className="bg-purple-800 hover:bg-purple-700 text-white uppercase shadow py-2 px-4 tracking-wide text-sm rounded-r"
+                onClick={this.joinGame}
+              >
+                join
+              </button>
+              {this.state.initError.error && (
+                <div className="rounded border-red-800 border-l-4 bg-red-200 p-2 my-2 flex items-center text-red-800 text-sm leading-tight">
+                  <svg
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    className="exclamation w-8 h-8 inline pr-2 flex-initial"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <span className="flex-1">{this.state.initError.msg}</span>
+                </div>
+              )}
             </div>
             <div className="font-bold mx-2">or:</div>
             <button
-              className="w-full bg-teal-600 hover:bg-teal-500 text-white uppercase shadow py-2 px-4 tracking-wide rounded-md"
+              className="w-full bg-teal-600 hover:bg-teal-500 text-white uppercase shadow py-2 px-4 tracking-wide rounded text-sm"
               onClick={this.createNewGame}
             >
               create new game
@@ -175,158 +235,295 @@ export class App extends Component {
     }
     if (this.state.appState === "join") {
       return (
-        <div>
-          <p>{this.state.gameID}</p>
-          <input
-            name="playerName"
-            onChange={this.handleChange}
-            value={this.state.playerName}
-            placeholder="your name"
-          />
-          <button onClick={this.handleSubmitName}>submit</button>
-
-          {this.state.numJoiners > 0 && (
-            <p>
-              <i>someone is joining...</i>
-            </p>
-          )}
-          {this.state.players && (
-            <ul>
-              <h2>Players:</h2>
-              {Object.entries(this.state.players).map(([id, pl]) => {
-                return <li key={id}>{pl.name}</li>;
-              })}
-            </ul>
-          )}
-
-          {this.state.isGameCreator && (
-            <div>
-              <h2>Select a category:</h2>
-              {this.state.categories && (
-                <div>
-                  <label>
-                    <input
-                      type="radio"
-                      name="selectedCategory"
-                      value={-1}
-                      onChange={this.handleChange}
-                      checked={this.state.selectedCategory === "-1"}
-                    />
-                    Any category
-                  </label>
-                  {this.state.categories.map((cat) => (
-                    <label key={cat.id}>
-                      <input
-                        type="radio"
-                        name="selectedCategory"
-                        value={cat.id}
-                        onChange={this.handleChange}
-                        checked={
-                          this.state.selectedCategory === cat.id.toString()
-                        }
-                      />
-                      {cat.name}
-                    </label>
-                  ))}
-                </div>
-              )}
-              <h2>Select difficulty:</h2>
-              <label>
-                <input
-                  type="radio"
-                  name="difficulty"
-                  value={-1}
-                  onChange={this.handleChange}
-                  checked={this.state.difficulty === "-1"}
-                />
-                Any difficulty
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="difficulty"
-                  value="easy"
-                  onChange={this.handleChange}
-                  checked={this.state.difficulty === "easy"}
-                />
-                Easy
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="difficulty"
-                  value="medium"
-                  onChange={this.handleChange}
-                  checked={this.state.difficulty === "medium"}
-                />
-                Medium
-              </label>
-              <label>
-                <input
-                  type="radio"
-                  name="difficulty"
-                  value="hard"
-                  onChange={this.handleChange}
-                  checked={this.state.difficulty === "hard"}
-                />
-                Hard
-              </label>
-              <h2>Number of questions</h2>
-              <input
-                type="number"
-                value={this.state.numberQuestions}
-                name="numberQuestions"
-                onChange={this.handleChange}
-              ></input>
-              <button onClick={this.startGame}>start game</button>
+        <div className="bg-gray-100 w-screen h-screen absolute overflow-scroll">
+          <div className="max-w-md mx-auto px-2 py-1">
+            <div className="text-sm uppercase tracking-wide text-gray-700 w-max-content mx-auto">
+              your game code:
             </div>
-          )}
+            <span className="block uppercase tracking-wider text-xl font-mono px-3 py-1 rounded border-gray-700 border-2 bg-white shadow text-gray-800 font-hairline mx-auto w-min-content">
+              {this.state.gameID}
+            </span>
+
+            <div className="text-gray-600 italic text-xs leading-none text-center mt-2 mb-4">
+              share this code with friends who want to join the game
+            </div>
+
+            <div className="w-max-content mx-auto">
+              <input
+                className="p-2 shadow rounded-l text-sm"
+                name="playerName"
+                onChange={this.handleChange}
+                value={this.state.playerName}
+                placeholder="your name"
+              />
+              <button
+                className="bg-purple-800 hover:bg-purple-700 text-white uppercase shadow py-2 px-4 tracking-wider text-sm rounded-r"
+                onClick={this.handleSubmitName}
+              >
+                submit
+              </button>
+            </div>
+
+            <h2 className="uppercase tracking-wide text-sm text-gray-700 mb-2 mt-4">
+              Players:
+            </h2>
+            {this.state.players && (
+              <ul>
+                {Object.entries(this.state.players).map(([id, pl]) => {
+                  return (
+                    <li key={id}>
+                      <svg
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className="user w-8 h-8 inline pr-1"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      {pl.name}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {!this.state.players && <p>Nobody has joined the game.</p>}
+            {/* {this.state.numJoiners > 0 && (
+              <ul>
+                <li className="animate-pulse">
+                  <svg
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    className="user w-8 h-8 inline pr-1"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <span className="italic gray-600 text-sm">
+                    someone is joining...
+                  </span>
+                </li>
+              </ul>
+            )} */}
+
+            {this.state.isGameCreator && (
+              <div>
+                <h2 className="uppercase tracking-wide text-sm text-gray-700 mb-2 mt-4">
+                  Select a category:
+                </h2>
+                {this.state.categories && (
+                  <select
+                    className="p-2 rounded shadow max-w-full"
+                    name="selectedCategory"
+                    onChange={this.handleChange}
+                  >
+                    <option value="-1">Any category</option>
+                    {this.state.categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <h2 className="uppercase tracking-wide text-sm text-gray-700 mb-2 mt-4">
+                  Select difficulty:
+                </h2>
+                <label className="block mb-1">
+                  <input
+                    type="radio"
+                    name="difficulty"
+                    value={-1}
+                    onChange={this.handleChange}
+                    checked={this.state.difficulty === "-1"}
+                  />
+                  <span className="ml-2">Any difficulty</span>
+                </label>
+                {/* <hr className=" w-32"/> */}
+                <label className="block mt-1">
+                  <input
+                    type="radio"
+                    name="difficulty"
+                    value="easy"
+                    onChange={this.handleChange}
+                    checked={this.state.difficulty === "easy"}
+                  />
+                  <span className="ml-2">Easy</span>
+                </label>
+                <label className="block">
+                  <input
+                    type="radio"
+                    name="difficulty"
+                    value="medium"
+                    onChange={this.handleChange}
+                    checked={this.state.difficulty === "medium"}
+                  />
+                  <span className="ml-2">Medium</span>
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="difficulty"
+                    value="hard"
+                    onChange={this.handleChange}
+                    checked={this.state.difficulty === "hard"}
+                  />
+                  <span className="ml-2">Hard</span>
+                </label>
+                <h2 className="uppercase tracking-wide text-sm text-gray-700 mb-2 mt-4">
+                  Number of questions:
+                </h2>
+                <input
+                  className="p-2 rounded shadow"
+                  type="number"
+                  value={this.state.numberQuestions}
+                  name="numberQuestions"
+                  inputMode="numeric"
+                  onChange={this.handleChange}
+                ></input>
+                <button
+                  className="block mx-auto bg-teal-700 hover:bg-teal-600 text-white uppercase shadow py-2 px-4 tracking-wide text-sm rounded mt-4"
+                  onClick={this.startGame}
+                >
+                  start game
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    } else if (this.state.appState === "countdown") {
+      return (
+        <div class="absolute w-screen h-screen flex items-center">
+          <div className="max-w-sm mx-auto content-center font-thin text-purple-700">
+            starting game in
+            <div className="text-6xl font-black animate-ping text-gray-900">
+              {this.state.gameCountdown}
+            </div>
+          </div>
         </div>
       );
     }
     return (
-      <div className="bg-gray-100 w-screen h-screen content-center">
-        <div className="max-w-sm ">
-        {this.state.countdownTime > 0 && (
-          <p>starting game in {this.state.countdownTime}</p>
-        )}
-        {this.state.currentQuestion && (
-          <div>
-            <p>{this.state.currentQuestion.question}</p>
-            {this.state.currentQuestion.answers.map((a, idx) => (
-              <label key={idx} className={"block bg-white py-2 px-4 border-solid rounded my-2 box-border "
-                    + (this.state.userAnswer===idx.toString() ? "shadow-xl border-4 " : 'shadow border-2 ')
-                    + (this.state.correctAnswer ? (this.state.correctAnswer===idx.toString() ? "border-green-500" : "border-red-500") : "border-gray-800")}>
-                <input
-                  className="hidden"
-                  type="radio"
-                  name="userAnswer"
-                  value={idx}
-                  onChange={this.handleChange}
-                  checked={this.state.userAnswer === idx.toString()}
-                  disabled={this.state.correctAnswer}
-                />
-                {this.state.correctAnswer && this.state.correctAnswer!==idx.toString() && <svg viewBox="0 0 20 20" fill="currentColor" className="x w-6 h-6 inline text-red-500"><path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" /></svg>}
-                {this.state.correctAnswer===idx.toString() && <svg viewBox="0 0 20 20" fill="currentColor" className="check w-6 h-6 inline text-green-500"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                <span className="pl-2">{a}</span>
-              </label>
-            ))}
+      <div className="bg-gray-100 w-screen h-screen absolute">
+        {currentQ && (
+          <div className="absolute w-full uppercase bg-purple-900 text-gray-300 text-xs tracking-wider shadow">
+            <div className="max-w-sm mx-auto px-2 py-1">
+              question {currentQ.index + 1} of {this.state.numberQuestions}
+            </div>
           </div>
         )}
 
-        {this.state.players && (
-          <ul>
-            <h2>Leaderboard:</h2>
-            {Object.entries(this.state.players).map(([id, pl]) => {
-              return (
-                <li key={id}>
-                  <b>{pl.name}</b>: {pl.score}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
+        <div className="max-w-sm mx-auto my-8 p-2">
+          <div
+            className={
+              this.state.correctAnswer
+                ? "hidden"
+                : "fixed bottom-0 right-0 lg:absolute lg:-ml-16 lg:-mt-1 lg:bottom-auto lg:right-auto font-black text-2xl h-12 w-12 m-4 rounded-full bg-teal-700 text-gray-100 shadow"
+            }
+          >
+            <div className="mx-auto animate-bounce min-w-0 pt-3 w-min-content">
+              {this.state.questionCountdown}
+            </div>
+          </div>
+
+          {currentQ && (
+            <div>
+              <p>{currentQ.question}</p>
+              {currentQ.answers.map((a, idx) => (
+                <label
+                  key={idx}
+                  className={
+                    "transition relative block bg-white py-2 px-4 border-solid rounded my-2 box-border border-2 " +
+                    (this.state.userAnswer === idx.toString()
+                      ? "shadow-xl z-40 border-l-8 "
+                      : "shadow z-20 ") +
+                    (this.state.correctAnswer
+                      ? this.state.correctAnswer === idx
+                        ? "border-green-500"
+                        : "border-red-500"
+                      : "border-gray-800")
+                  }
+                >
+                  <input
+                    className="hidden"
+                    type="radio"
+                    name="userAnswer"
+                    value={idx}
+                    onChange={this.handleChange}
+                    checked={this.state.userAnswer === idx.toString()}
+                    disabled={this.state.correctAnswer}
+                  />
+                  {this.state.correctAnswer &&
+                    this.state.correctAnswer !== idx && (
+                      <svg
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className="x w-6 h-6 inline text-red-500"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    )}
+                  {this.state.correctAnswer === idx && (
+                    <svg
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="check w-6 h-6 inline text-green-500"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  )}
+                  <span className="pl-2">{a}</span>
+                </label>
+              ))}
+              <hr />
+            </div>
+          )}
+          {this.state.gameOver && (
+            <h1 className="text-3xl mx-2 font-black">Game over</h1>
+          )}
+          {this.state.players && (
+            <ul>
+              <h2 className="uppercase tracking-wide text-sm m-1 text-gray-700">
+                Leaderboard:
+              </h2>
+              {Object.entries(this.state.players).map(([id, pl]) => {
+                const width =
+                  this.state.updatedIndex === 0
+                    ? 0
+                    : (pl.score / this.state.updatedIndex) * 100;
+                return (
+                  <li
+                    key={id}
+                    className="bg-pink-300 overflow-hidden relative rounded shadow"
+                  >
+                    <span
+                      className="bg-pink-600 pl-2 py-1 whitespace-no-wrap inline-block text-white font-bold"
+                      style={{ width: width + "%" }}
+                    >
+                      {pl.name}
+                    </span>
+                    <span className="py-1 pr-2 text-white right-0 absolute">
+                      {pl.score} / {this.state.updatedIndex}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       </div>
     );
   }
