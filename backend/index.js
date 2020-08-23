@@ -2,19 +2,18 @@ const express = require("express"),
   socket = require("socket.io"),
   axios = require("axios"),
   Hashids = require("hashids/cjs");
+he = require("he");
 const { response } = require("express");
 
 const PORT = process.env.PORT || 4000;
-const DOMAIN = "http://localhost:3000";
+const DOMAIN = "http://localhost:3000"; //https://lauraschultz.github.io/trivia
 
 let app = express(),
   server = app.listen(PORT, () => console.log(`listening on port ${PORT}`)),
   io = socket(server, { origins: "*:*" }),
-  i = 0,
-  activeGames = {},
-  hashids = new Hashids("get stupid", 4, "ABCDEFGHIJKLMNPQRSTUVWXY3456789");
-
-const selectInterval = 6000,
+  hashids = new Hashids("get stupid", 4, "ABCDEFGHIJKLMNPQRSTUVWXY3456789"),
+  activeGames = {};
+const selectInterval = 10000,
   displayInterval = 3500,
   countdownLength = 3;
 
@@ -52,7 +51,8 @@ io.on("connection", function (socket) {
 });
 
 let emitPlayers = (gameNum) => {
-  io.in(gameNum).emit("players", activeGames[gameNum].players);
+  const players = activeGames[gameNum].players;
+  io.in(gameNum).emit("players", Object.keys(players).length>0 ? players : undefined);
 };
 
 let handleJoining = ({ numInc, gameID }, socket) => {
@@ -63,9 +63,14 @@ let handleJoining = ({ numInc, gameID }, socket) => {
 };
 
 var validateAnswer = (socketID, { answer, questionNum, gameID }, callback) => {
+  console.log(
+    "VALIDATE SNAWER   " + JSON.stringify({ answer, questionNum, gameID })
+  );
   const gameNum = decode(gameID);
   const correctAnsIdx =
-    activeGames[gameNum].questions[questionNum].correctAnswer;
+    activeGames[gameNum].questions[questionNum].correctAnswerIndex;
+  // console.log('triviaquestions[i] is ' + JSON.stringify(activeGames[gameNum].triviaQuestions[questionNum]))
+  console.log("FOUND CORRECTANSINDEX: " + correctAnsIdx);
   callback({
     isCorrect: correctAnsIdx === answer,
     correctAnswer: correctAnsIdx,
@@ -96,10 +101,11 @@ var createNewGame = (socket, callback) => {
   callback(gameID);
   activeGames[j] = {
     canJoin: true,
-    numTypers: 0,
     players: {},
-    questions: {}, // 0: {correctAnswer: x}
     numJoiners: 0,
+    questions: {},
+    i: 0,
+    numQuestions: undefined,
   };
   socket.join(j);
   console.log("the socket joined " + j);
@@ -110,26 +116,34 @@ var decode = (gameID) => {
 };
 
 var joinGame = (gameID, socket, callback) => {
-  const gameNumber = decode(gameID);
-  console.log("computed game number: " + gameNumber);
-  console.log(activeGames[gameNumber]);
-  if (!activeGames[gameNumber]) {
+  try {
+    const gameNumber = decode(gameID);
+    console.log("computed game number: " + gameNumber);
+    console.log(activeGames[gameNumber]);
+    if (!activeGames[gameNumber]) {
+      callback({
+        sucess: false,
+        errorMsg:
+          "The game you requested was not found. Ensure you have the correct game code and try again.",
+      });
+    } else if (activeGames[gameNumber].canJoin) {
+      callback({
+        sucess: true,
+      });
+      socket.join(gameNumber);
+      console.log("the socket joined " + gameNumber);
+      handleJoining({ numInc: 1, gameID: gameID }, socket);
+    } else {
+      callback({
+        sucess: false,
+        errorMsg: "You can't join a game that is already in progress.",
+      });
+    }
+  } catch {
     callback({
       sucess: false,
       errorMsg:
-        "the game you requested was not found. ensure you have the correct game code and try again.",
-    });
-  } else if (activeGames[gameNumber].canJoin) {
-    callback({
-      sucess: true,
-    });
-    socket.join(gameNumber);
-    console.log("the socket joined " + gameNumber);
-    handleJoining({ numInc: 1, gameID: gameID }, socket);
-  } else {
-    callback({
-      sucess: false,
-      errorMsg: "you can't join a game that is already in progress.",
+        "The game you requested was not found. Ensure you have the correct game code and try again.",
     });
   }
 };
@@ -138,59 +152,67 @@ var startGame = ({ gameID, category, difficulty, numberQuestions }) => {
   const gameNum = decode(gameID);
   const d = difficulty === "-1" ? "" : `&difficulty=${difficulty}`;
   const c = category === "-1" ? "" : `&category=${category}`;
-  io.in(gameNum).emit("start countdown", countdownLength);
+  io.in(gameNum).emit("start countdown", {
+    countdownLength: countdownLength,
+    questionLength: selectInterval / 1000,
+    numberQuestions: numberQuestions,
+  });
   i = 0;
+  // handle questions when the come back from endpt and convert them to appropriate format
   axios
     .get(`https://opentdb.com/api.php?amount=${numberQuestions}${c}${d}`)
     .then((response) => {
       console.log(
         `sent response: https://opentdb.com/api.php?amount=${numberQuestions}${c}${d}`
       );
-      activeGames[gameNum].triviaQuestions = response.data.results;
-      // console.log(`got response: ${triviaQuestions}`);
+      const r = response.data.results;
+      console.log(`got response from trivia API: ${r}`);
+      r.forEach((q, idx) => {
+        let answers = [q.correct_answer]
+          .concat(Object.values(q.incorrect_answers))
+          .map((a) => he.decode(a));
+        activeGames[gameNum].questions[idx] = {
+          questionPrompt: he.decode(q.question),
+          correctAnswerIndex: shuffle2(answers),
+          shuffledAnswers: answers,
+        };
+      });
+      console.log(
+        `created question object ${JSON.stringify(
+          activeGames[gameNum].questions
+        )}`
+      );
+
       setTimeout(() => sendQuestion(gameNum), countdownLength * 1000);
     });
   activeGames[gameNum].canJoin = false;
+  activeGames[gameNum].numQuestions = numberQuestions;
 };
 
 let sendQuestion = (gameNum) => {
-    console.log("beginning sendquestion, i is " + i);
-  let currentQuestion =  activeGames[gameNum].triviaQuestions[i];
-  const answers = [currentQuestion.correct_answer].concat(
-    Object.values(currentQuestion.incorrect_answers)
+  let currentGame = activeGames[gameNum];
+  var currentIdx = currentGame.i;
+  io.in(gameNum).emit("question", {
+    index: currentIdx,
+    question: currentGame.questions[currentIdx].questionPrompt,
+    answers: currentGame.questions[currentIdx].shuffledAnswers,
+  });
+  setTimeout(() => requestAnswer(gameNum), selectInterval);
+  activeGames[gameNum].i = currentIdx + 1;
+  // console.log(`currentIDx is now ${currentIdx}`)
+  setTimeout(
+    () =>
+      currentGame.i < currentGame.numQuestions
+        ? sendQuestion(gameNum)
+        : io.in(gameNum).emit("game over"),
+    selectInterval + displayInterval
   );
-  console.log('here1')
-  const correctAnswerIndex = shuffle2(answers);
-  console.log('here2')
-  console.log("the shuffled array is now" + answers);
-  console.log("correctAnswerIndex is " + correctAnswerIndex);
-  currentQuestion = {
-    index: i,
-    question: currentQuestion.question,
-    answers: answers,
-  };
-  activeGames[gameNum].questions[i] = {
-    correctAnswer: correctAnswerIndex.toString(),
-  };
-  io.in(gameNum).emit("question", currentQuestion);
-  const ans =  activeGames[gameNum].triviaQuestions[i].correct_answer;
-  setTimeout(() => requestAnswer(gameNum, ans), selectInterval);
-  i++;
-  if (i <  activeGames[gameNum].triviaQuestions.length) {
-    // console.log("setting timeout for sendquestion, i is " + i);
-    setTimeout(() => sendQuestion(gameNum), selectInterval + displayInterval);
-  } else {
-    setTimeout(
-      () => io.in(gameNum).emit("game over"),
-      selectInterval + displayInterval
-    );
-  }
 };
 
 function shuffle2(array) {
   var correctAnsIdx = 0;
   for (let idx = array.length - 1; idx > 0; idx--) {
-    let j = Math.floor(Math.random() * (idx+1));
+    let j = Math.floor(Math.random() * (idx + 1));
     if (j === 0) {
       correctAnsIdx = JSON.parse(JSON.stringify(idx));
     }
