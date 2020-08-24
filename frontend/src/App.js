@@ -457,7 +457,7 @@ export class App extends Component {
         <div class="absolute w-screen h-screen flex items-center">
           <div className="max-w-sm mx-auto content-center font-thin text-purple-700">
             starting game in
-            <div className="text-6xl font-black animate-ping text-gray-900 text-center">
+            <div className="text-6xl font-black text-gray-900 text-center">
               {this.state.gameCountdown}
             </div>
           </div>
@@ -482,7 +482,7 @@ export class App extends Component {
                 : "fixed bottom-0 right-0 lg:absolute lg:-ml-16 lg:-mt-1 lg:bottom-auto lg:right-auto font-black text-2xl h-12 w-12 m-4 rounded-full bg-teal-700 text-gray-100 shadow"
             }
           >
-            <div className="mx-auto animate-bounce min-w-0 pt-3 w-min-content">
+            <div className="mx-auto min-w-0 pt-1 w-min-content">
               {this.state.questionCountdown}
             </div>
           </div>

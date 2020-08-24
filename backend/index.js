@@ -6,7 +6,7 @@ he = require("he");
 const { response } = require("express");
 
 const PORT = process.env.PORT || 4000;
-const DOMAIN = "http://localhost:3000"; //"https://lauraschultz.github.io/trivia"
+const DOMAIN = "https://lauraschultz.github.io/trivia"; //"http://localhost:3000"
 
 let app = express(),
   server = app.listen(PORT, () => console.log(`listening on port ${PORT}`)),
@@ -15,10 +15,10 @@ let app = express(),
   activeGames = {};
 const selectInterval = 10000,
   displayInterval = 3500,
-  countdownLength = 3;
+  countdownLength = 5;
 
 app.use(function (req, res, next) {
-  res.header("Access-Control-Allow-Origin", DOMAIN); // update to match the domain you will make the request from
+  res.header("Access-Control-Allow-Origin", "*"); // update to match the domain you will make the request from
   res.header(
     "Access-Control-Allow-Headers",
     "Origin, X-Requested-With, Content-Type, Accept"
