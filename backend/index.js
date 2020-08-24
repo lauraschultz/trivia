@@ -6,7 +6,7 @@ he = require("he");
 const { response } = require("express");
 
 const PORT = process.env.PORT || 4000;
-const DOMAIN = "http://localhost:3000"; //https://lauraschultz.github.io/trivia
+const DOMAIN = "http://localhost:3000"; //"https://lauraschultz.github.io/trivia"
 
 let app = express(),
   server = app.listen(PORT, () => console.log(`listening on port ${PORT}`)),
@@ -47,7 +47,7 @@ io.on("connection", function (socket) {
     validateAnswer(socket.id, answerInfo, callback)
   );
   socket.on("submit name", (data) => handleSubmitName(data, socket));
-  socket.on("joining", (info) => handleJoining(info, socket));
+  socket.on("joining", handleJoining);
 });
 
 let emitPlayers = (gameNum) => {
@@ -55,10 +55,10 @@ let emitPlayers = (gameNum) => {
   io.in(gameNum).emit("players", Object.keys(players).length>0 ? players : undefined);
 };
 
-let handleJoining = ({ numInc, gameID }, socket) => {
+let handleJoining = ({ numInc, gameID }) => {
   const gameNum = decode(gameID);
   activeGames[gameNum].numJoiners += numInc;
-  socket.in(gameNum).emit("joining", activeGames[gameNum].numJoiners);
+  io.in(gameNum).emit("joining", activeGames[gameNum].numJoiners);
   emitPlayers(gameNum);
 };
 
@@ -72,20 +72,20 @@ var validateAnswer = (socketID, { answer, questionNum, gameID }, callback) => {
   // console.log('triviaquestions[i] is ' + JSON.stringify(activeGames[gameNum].triviaQuestions[questionNum]))
   console.log("FOUND CORRECTANSINDEX: " + correctAnsIdx);
   callback({
-    isCorrect: correctAnsIdx === answer,
+    isCorrect: correctAnsIdx === +answer,
     correctAnswer: correctAnsIdx,
   });
-  if (correctAnsIdx === answer) {
+  if (correctAnsIdx === +answer) {
     activeGames[gameNum].players[socketID].score++;
   }
   emitPlayers(gameNum);
 };
 
 var handleSubmitName = ({ gameID, playerName }, socket) => {
-  console.log(playerName + " submitted name");
+  console.log(`${playerName} submitted name`);
   const gameNum = decode(gameID);
   activeGames[gameNum].players[socket.id] = { name: playerName, score: 0 };
-  console.log("added entry for " + socket.id);
+  console.log(`added entry for ${socket.id}`);
   emitPlayers(gameNum);
 };
 
@@ -97,7 +97,7 @@ var createNewGame = (socket, callback) => {
   }
   //hash it
   const gameID = hashids.encode(j);
-  console.log("gameID is " + gameID);
+  console.log(`gameID is ${gameID}`);
   callback(gameID);
   activeGames[j] = {
     canJoin: true,
@@ -108,7 +108,7 @@ var createNewGame = (socket, callback) => {
     numQuestions: undefined,
   };
   socket.join(j);
-  console.log("the socket joined " + j);
+  handleJoining({ numInc: 1, gameID: gameID }, socket);
 };
 
 var decode = (gameID) => {
@@ -118,8 +118,6 @@ var decode = (gameID) => {
 var joinGame = (gameID, socket, callback) => {
   try {
     const gameNumber = decode(gameID);
-    console.log("computed game number: " + gameNumber);
-    console.log(activeGames[gameNumber]);
     if (!activeGames[gameNumber]) {
       callback({
         sucess: false,
@@ -131,7 +129,7 @@ var joinGame = (gameID, socket, callback) => {
         sucess: true,
       });
       socket.join(gameNumber);
-      console.log("the socket joined " + gameNumber);
+      console.log(`the socket joined  ${gameNumber}`);
       handleJoining({ numInc: 1, gameID: gameID }, socket);
     } else {
       callback({
@@ -166,7 +164,7 @@ var startGame = ({ gameID, category, difficulty, numberQuestions }) => {
         `sent response: https://opentdb.com/api.php?amount=${numberQuestions}${c}${d}`
       );
       const r = response.data.results;
-      console.log(`got response from trivia API: ${r}`);
+      console.log(`got response from trivia API: ${JSON.stringify(r)}`);
       r.forEach((q, idx) => {
         let answers = [q.correct_answer]
           .concat(Object.values(q.incorrect_answers))
@@ -177,11 +175,6 @@ var startGame = ({ gameID, category, difficulty, numberQuestions }) => {
           shuffledAnswers: answers,
         };
       });
-      console.log(
-        `created question object ${JSON.stringify(
-          activeGames[gameNum].questions
-        )}`
-      );
 
       setTimeout(() => sendQuestion(gameNum), countdownLength * 1000);
     });
@@ -199,7 +192,6 @@ let sendQuestion = (gameNum) => {
   });
   setTimeout(() => requestAnswer(gameNum), selectInterval);
   activeGames[gameNum].i = currentIdx + 1;
-  // console.log(`currentIDx is now ${currentIdx}`)
   setTimeout(
     () =>
       currentGame.i < currentGame.numQuestions

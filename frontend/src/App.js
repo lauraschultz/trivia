@@ -6,7 +6,7 @@ import "./tailwind.css";
 export class App extends Component {
   constructor(props) {
     super(props);
-    this.SERVER = "http://localhost:4000"; //"https://crazytrivia.herokuapp.com/"
+    this.SERVER = "https://crazytrivia.herokuapp.com"; //"http://localhost:4000"
     this.socket = io.connect(this.SERVER);
     this.state = {
       userAnswer: "-1",
@@ -36,7 +36,6 @@ export class App extends Component {
     this.socket.on(
       "start countdown",
       ({ countdownLength, questionLength, numberQuestions }) => {
-        console.log("START COUNTDOWN");
         this.countdownTimer(countdownLength, "gameCountdown");
         this.setState({
           appState: "countdown",
@@ -47,7 +46,7 @@ export class App extends Component {
       }
     );
     this.socket.on("question", (q) => {
-      console.log("got a question: " + JSON.stringify(q));
+      console.log(`recieved question:  ${JSON.stringify(q)}`);
       this.setState({
         appState: "play",
         currentQuestion: q,
@@ -67,7 +66,6 @@ export class App extends Component {
           gameID: this.state.gameID,
         },
         ({ isCorrect, correctAnswer }) => {
-          console.log("validate aswer callback :): " + correctAnswer);
           this.setState((prevState) => {
             return {
               correctAnswer: correctAnswer,
@@ -77,14 +75,12 @@ export class App extends Component {
         }
       );
     });
-    this.socket.on("number typers", (n) => this.setState({ numTypers: n }));
     this.socket.on("players", (p) => {
-      console.log("players: " + p);
+      console.log(`update players:  ${JSON.stringify(p)}`);
       this.setState({ players: p });
     });
     this.socket.on("joining", (n) => {
-      console.log("num joiners is " + n);
-      this.setState({ numJoiners: n });
+      this.setState({ numJoiners: this.state.nameSubmitted ? n : n - 1 });
     });
     this.socket.on("game over", () => {
       console.log("GAME OVER");
@@ -113,12 +109,10 @@ export class App extends Component {
     this.socket.emit("join game", this.state.gameID, (callbackData) => {
       if (callbackData.sucess) {
         this.setState({ appState: "join" });
-        // this.handleTyping(true);
       } else {
         this.setState({
-          joinError: { error: true, msg: callbackData.errorMsg },
+          initError: { error: true, msg: callbackData.errorMsg },
         });
-        console.log(callbackData.errorMsg);
       }
     });
   };
@@ -126,25 +120,50 @@ export class App extends Component {
   createNewGame = () => {
     this.setState({ isGameCreator: true, appState: "join" });
     this.socket.emit("create new game", {}, (gameID) => {
-      console.log("got gameid from callback: " + gameID);
+      console.log(`got gameid from callback: ${gameID}`);
       this.setState({ gameID: gameID });
     });
     axios.get(`${this.SERVER}/categories`).then((cats) => {
-      console.log(cats.data);
       this.setState({ categories: cats.data });
     });
   };
 
   startGame = () => {
-    if (!this.state.joinError.error) {
-      this.socket.emit("start game", {
-        gameID: this.state.gameID,
-        category: this.state.selectedCategory,
-        difficulty: this.state.difficulty,
-        numberQuestions: this.state.numberQuestions,
+    if (!this.state.nameSubmitted) {
+      this.setState({
+        joinError: {
+          error: true,
+          msg: "Please submit a name for yourself before starting the game.",
+        },
       });
-      this.setState({ appState: "countdown" });
+      return;
     }
+    const nQ = +this.state.numberQuestions;
+    if (isNaN(nQ)) {
+      this.setState({
+        joinError: {
+          error: true,
+          msg: "Please enter a number in the Number of Questions field.",
+        },
+      });
+      return;
+    }
+    if (nQ < 1 || nQ > 50) {
+      this.setState({
+        joinError: {
+          error: true,
+          msg: "Please enter a number of questions that is between 1 and 50.",
+        },
+      });
+      return;
+    }
+    this.socket.emit("start game", {
+      gameID: this.state.gameID,
+      category: this.state.selectedCategory,
+      difficulty: this.state.difficulty,
+      numberQuestions: this.state.numberQuestions,
+    });
+    this.setState({ appState: "countdown" });
   };
 
   handleChange = (event) => {
@@ -166,7 +185,7 @@ export class App extends Component {
   // };
 
   handleSubmitName = () => {
-    if (!this.state.nameSubmitted && !this.state.isGameCreator) {
+    if (!this.state.nameSubmitted) {
       // the player is submitting name for the first time
       this.socket.emit("joining", { numInc: -1, gameID: this.state.gameID });
     }
@@ -181,12 +200,12 @@ export class App extends Component {
     const currentQ = this.state.currentQuestion;
     if (this.state.appState === "init") {
       return (
-        <div className="prism-bg object-cover h-screen w-screen absolute flex items-center">
-          <div className="max-w-sm bg-gray-100 mx-auto p-8 shadow-lg rounded-md">
-            <h1 className="font-hairline mb-2 text-4xl">Trivia</h1>
+        <div className="prism-bg object-cover h-screen w-screen absolute flex items-center justify-center">
+          <div className="max-w-sm bg-gray-100 mx-4 p-6 shadow-lg rounded-md">
+            <h1 className="font-hairline mb-2 text-4xl">Multiplayer Trivia</h1>
             <div className="w-full mb-4">
               <label htmlFor="gameID" className="block font-bold mx-2">
-                Join a Game:
+                Join a game:
               </label>
               <input
                 className={
@@ -200,10 +219,17 @@ export class App extends Component {
                 onChange={this.handleChange}
               />
               <button
-                className="bg-purple-800 hover:bg-purple-700 text-white uppercase shadow py-2 px-4 tracking-wide text-sm rounded-r"
+                className="bg-purple-800 hover:bg-purple-700 text-white uppercase shadow py-2 px-4 pr-10 tracking-wide text-sm rounded-r"
                 onClick={this.joinGame}
               >
                 join
+                <svg
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className="user-group w-6 h-6 pl-1 pb-1 absolute inline"
+                >
+                  <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
+                </svg>
               </button>
               {this.state.initError.error && (
                 <div className="rounded border-red-800 border-l-4 bg-red-200 p-2 my-2 flex items-center text-red-800 text-sm leading-tight">
@@ -222,11 +248,23 @@ export class App extends Component {
                 </div>
               )}
             </div>
-            <div className="font-bold mx-2">or:</div>
+            <hr className="my-2" />
+            <div className="font-bold mx-2">Start a game:</div>
             <button
               className="w-full bg-teal-600 hover:bg-teal-500 text-white uppercase shadow py-2 px-4 tracking-wide rounded text-sm"
               onClick={this.createNewGame}
             >
+              <svg
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                className="plus-circle w-6 h-6 pr-1 inline"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z"
+                  clipRule="evenodd"
+                />
+              </svg>
               create new game
             </button>
           </div>
@@ -289,8 +327,10 @@ export class App extends Component {
                 })}
               </ul>
             )}
-            {!this.state.players && <p>Nobody has joined the game.</p>}
-            {/* {this.state.numJoiners > 0 && (
+            {!this.state.players && this.state.numJoiners === 0 && (
+              <p className="px-3 py-1 mx-4 bg-gray-200 italic border-l-4 border-gray-800 rounded w-max-content">Nobody has joined the game.</p>
+            )}
+            {this.state.numJoiners > 0 && (
               <ul>
                 <li className="animate-pulse">
                   <svg
@@ -309,7 +349,7 @@ export class App extends Component {
                   </span>
                 </li>
               </ul>
-            )} */}
+            )}
 
             {this.state.isGameCreator && (
               <div>
@@ -391,6 +431,22 @@ export class App extends Component {
                 >
                   start game
                 </button>
+                {this.state.joinError.error && (
+                  <div className="rounded border-red-800 border-l-4 bg-red-200 p-2 my-2 flex items-center text-red-800 text-sm leading-tight">
+                    <svg
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="exclamation w-8 h-8 inline pr-2 flex-initial"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                    <span className="flex-1">{this.state.joinError.msg}</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -401,7 +457,7 @@ export class App extends Component {
         <div class="absolute w-screen h-screen flex items-center">
           <div className="max-w-sm mx-auto content-center font-thin text-purple-700">
             starting game in
-            <div className="text-6xl font-black animate-ping text-gray-900">
+            <div className="text-6xl font-black animate-ping text-gray-900 text-center">
               {this.state.gameCountdown}
             </div>
           </div>
@@ -421,7 +477,7 @@ export class App extends Component {
         <div className="max-w-sm mx-auto my-8 p-2">
           <div
             className={
-              this.state.correctAnswer
+              typeof this.state.correctAnswer === "number"
                 ? "hidden"
                 : "fixed bottom-0 right-0 lg:absolute lg:-ml-16 lg:-mt-1 lg:bottom-auto lg:right-auto font-black text-2xl h-12 w-12 m-4 rounded-full bg-teal-700 text-gray-100 shadow"
             }
@@ -442,7 +498,7 @@ export class App extends Component {
                     (this.state.userAnswer === idx.toString()
                       ? "shadow-xl z-40 border-l-8 "
                       : "shadow z-20 ") +
-                    (this.state.correctAnswer
+                    (typeof this.state.correctAnswer === "number"
                       ? this.state.correctAnswer === idx
                         ? "border-green-500"
                         : "border-red-500"
@@ -456,9 +512,9 @@ export class App extends Component {
                     value={idx}
                     onChange={this.handleChange}
                     checked={this.state.userAnswer === idx.toString()}
-                    disabled={this.state.correctAnswer}
+                    disabled={typeof this.state.correctAnswer === "number"}
                   />
-                  {this.state.correctAnswer &&
+                  {typeof this.state.correctAnswer === "number" &&
                     this.state.correctAnswer !== idx && (
                       <svg
                         viewBox="0 0 20 20"
@@ -488,7 +544,7 @@ export class App extends Component {
                   <span className="pl-2">{a}</span>
                 </label>
               ))}
-              <hr />
+              <hr className="my-1" />
             </div>
           )}
           {this.state.gameOver && (
@@ -507,7 +563,7 @@ export class App extends Component {
                 return (
                   <li
                     key={id}
-                    className="bg-pink-300 overflow-hidden relative rounded shadow"
+                    className="bg-pink-300 overflow-hidden relative rounded shadow mb-2"
                   >
                     <span
                       className="bg-pink-600 pl-2 py-1 whitespace-no-wrap inline-block text-white font-bold"

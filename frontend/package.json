@@ -1,5 +1,6 @@
 {
   "name": "frontend",
+  "homepage": "http://lauraschultz.github.io/trivia",
   "version": "0.1.0",
   "private": true,
   "dependencies": {
@@ -16,7 +17,9 @@
   },
   "scripts": {
     "start": "react-scripts start",
-    "build": "postcss tailwind.css -o src/tailwind.css && react-scripts build",
+    "buildCSS" : "postcss tailwind.css -o src/tailwind.css ",
+    "build": "react-scripts build",
+    "postbuild": "mv build ../docs",
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
