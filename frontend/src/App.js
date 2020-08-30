@@ -22,7 +22,7 @@ function GameCountdown({ number }) {
 export class App extends Component {
   constructor(props) {
     super(props);
-    this.SERVER = "http://localhost:4000"; // "https://crazytrivia.herokuapp.com"; //
+    this.SERVER = "https://crazytrivia.herokuapp.com";//"http://localhost:4000"
     this.socket = io.connect(this.SERVER);
     this.state = {
       userAnswer: "-1",
