@@ -1,8 +1,8 @@
 const express = require("express"),
   socket = require("socket.io"),
   axios = require("axios"),
-  Hashids = require("hashids/cjs");
-he = require("he");
+  Hashids = require("hashids/cjs"),
+  he = require("he");
 const { response } = require("express");
 
 const PORT = process.env.PORT || 4000;
@@ -52,7 +52,15 @@ io.on("connection", function (socket) {
 
 let emitPlayers = (gameNum) => {
   const players = activeGames[gameNum].players;
-  io.in(gameNum).emit("players", Object.keys(players).length>0 ? players : undefined);
+  io.in(gameNum).emit(
+    "players",
+    Object.keys(players).length > 0
+      ? Object.entries(players).map(([id, pl]) => {
+          pl.id = id;
+          return pl;
+        })
+      : undefined
+  );
 };
 
 let handleJoining = ({ numInc, gameID }) => {
@@ -69,8 +77,6 @@ var validateAnswer = (socketID, { answer, questionNum, gameID }, callback) => {
   const gameNum = decode(gameID);
   const correctAnsIdx =
     activeGames[gameNum].questions[questionNum].correctAnswerIndex;
-  // console.log('triviaquestions[i] is ' + JSON.stringify(activeGames[gameNum].triviaQuestions[questionNum]))
-  console.log("FOUND CORRECTANSINDEX: " + correctAnsIdx);
   callback({
     isCorrect: correctAnsIdx === +answer,
     correctAnswer: correctAnsIdx,
@@ -111,13 +117,18 @@ var createNewGame = (socket, callback) => {
   handleJoining({ numInc: 1, gameID: gameID }, socket);
 };
 
+var formatGameID = (gameID) => {
+  return gameID.toUpperCase().replace(/\s+/g, "");
+};
+
 var decode = (gameID) => {
-  return hashids.decode(gameID.toUpperCase())[0];
+  return hashids.decode(gameID)[0];
 };
 
 var joinGame = (gameID, socket, callback) => {
   try {
-    const gameNumber = decode(gameID);
+    const formattedGameID = formatGameID(gameID);
+    const gameNumber = decode(formattedGameID);
     if (!activeGames[gameNumber]) {
       callback({
         sucess: false,
@@ -127,10 +138,11 @@ var joinGame = (gameID, socket, callback) => {
     } else if (activeGames[gameNumber].canJoin) {
       callback({
         sucess: true,
+        gameID: formattedGameID,
       });
       socket.join(gameNumber);
       console.log(`the socket joined  ${gameNumber}`);
-      handleJoining({ numInc: 1, gameID: gameID }, socket);
+      handleJoining({ numInc: 1, gameID: formattedGameID }, socket);
     } else {
       callback({
         sucess: false,

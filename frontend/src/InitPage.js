@@ -111,9 +111,9 @@ export function InitPage({
         </h2>
         {players && (
           <ul>
-            {Object.entries(players).map(([id, pl]) => {
+            {players.map((pl) => {
               return (
-                <li key={id}>
+                <li key={pl.id}>
                   <svg
                     viewBox="0 0 20 20"
                     fill="currentColor"
@@ -136,7 +136,7 @@ export function InitPage({
             Nobody has joined the game.
           </p>
         )}
-        {numberJoiners > 0 && (
+        {numberJoiners - (nameSubmitted ? 0 : 1) > 0 && (
           <ul>
             <li className="animate-pulse">
               <svg

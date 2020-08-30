@@ -8,6 +8,7 @@ function JoinPage({ joinGame, createGame, cont }) {
     e.preventDefault();
     joinGame(gameID, (callbackData) => {
       if (callbackData.sucess) {
+        console.log('success?')
         // this.setState({ appState: "join" });
         cont();
       } else {
