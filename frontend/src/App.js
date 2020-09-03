@@ -22,7 +22,7 @@ function GameCountdown({ number }) {
 export class App extends Component {
   constructor(props) {
     super(props);
-    this.SERVER = "https://crazytrivia.herokuapp.com";//"http://localhost:4000"
+    this.SERVER = "https://crazytrivia.herokuapp.com"; //"http://localhost:4000"
     this.socket = io.connect(this.SERVER);
     this.state = {
       userAnswer: "-1",
@@ -114,8 +114,7 @@ export class App extends Component {
     this.socket.emit("join game", gameID, (callbackData) => {
       if (callbackData.sucess) {
         this.setState({ appState: "join", gameID: callbackData.gameID }, () =>
-          {console.log(`gameID changed to ${this.state.gameID}`)
-          this.scrollToTop()}
+          console.log(`gameID changed to ${this.state.gameID}`)
         );
       } else {
         this.setState({
