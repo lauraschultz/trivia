@@ -26,22 +26,12 @@ export class App extends Component {
     this.socket = io.connect(this.SERVER);
     this.state = {
       userAnswer: "-1",
-      playerName: "",
       gameID: "",
-      // nameSubmitted: false,
       appState: "init",
       isGameCreator: false,
       numJoiners: 0,
       updatedIndex: 0,
       gameOver: false,
-      // initError: {
-      //   error: false,
-      //   msg: "",
-      // },
-      // joinError: {
-      //   error: false,
-      //   msg: "",
-      // },
     };
   }
 
@@ -124,7 +114,8 @@ export class App extends Component {
     this.socket.emit("join game", gameID, (callbackData) => {
       if (callbackData.sucess) {
         this.setState({ appState: "join", gameID: callbackData.gameID }, () =>
-          console.log(`gameID changed to ${this.state.gameID}`)
+          {console.log(`gameID changed to ${this.state.gameID}`)
+          this.scrollToTop()}
         );
       } else {
         this.setState({
@@ -151,17 +142,6 @@ export class App extends Component {
     this.socket.emit("start game", gameProps);
     this.setState({ appState: "countdown" });
   };
-
-  // handleChange = (event) => {
-  //   this.setState({
-  //     [event.target.name]: event.target.value,
-  //   });
-  //   // if (event.target.name === "gameID") {
-  //   //   this.setState({
-  //   //     joinError: { error: false, msg: "" },
-  //   //   });
-  //   // }
-  // };
 
   submitName = (gameID, playerName) => {
     this.socket.emit("submit name", {

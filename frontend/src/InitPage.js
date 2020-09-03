@@ -34,6 +34,7 @@ export function InitPage({
       msg: "",
     }),
     [nameSubmitted, setNameSubmitted] = useState(false);
+    console.log(`numJoiners is ${numberJoiners}, nameSubmitted is ${nameSubmitted}`)
 
   let handleSubmitName = (e) => {
     e.preventDefault();
@@ -131,7 +132,7 @@ export function InitPage({
             })}
           </ul>
         )}
-        {!players && numberJoiners === 0 && (
+        {!players && numberJoiners - (nameSubmitted ? 0 : 1) === 0 && (
           <p className="px-3 py-1 mx-4 bg-gray-200 italic border-l-4 border-gray-800 rounded w-max-content">
             Nobody has joined the game.
           </p>
